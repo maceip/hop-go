@@ -407,6 +407,7 @@ func (hs *HandshakeState) readServerAuth(b []byte) (int, error) {
 	logrus.Debugf("client: calculated sa mac: %x", hs.macBuf)
 	if !bytes.Equal(hs.macBuf[:], b[:MacLen]) {
 		logrus.Debugf("client: expected sa mac %x, got %x", hs.macBuf, b[:MacLen])
+		return 0, ErrInvalidMessage
 	}
 	// b = b[MacLen:]
 
