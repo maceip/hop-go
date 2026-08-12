@@ -187,3 +187,52 @@ func TestPrincipalCheckTargetFail(t *testing.T) {
 
 	StartPrincipalInstance(dc, ciFunc, setupTarg)
 }
+
+func TestPrincipalRejectsFollowUpIntent(t *testing.T) {
+	delegateConn, delegatePeer := net.Pipe()
+	targetConn, targetPeer := net.Pipe()
+	t.Cleanup(func() {
+		delegateConn.Close()
+		delegatePeer.Close()
+		targetConn.Close()
+		targetPeer.Close()
+	})
+
+	request := getTestCmdIntentRequest(t, "denied command").Data.Intent
+	rejection := fmt.Errorf("intent not approved")
+	principal := principalInstance{
+		delegateConn:    delegateConn,
+		targetConn:      targetConn,
+		targetInfo:      request.TargetURL(),
+		targetConnected: true,
+		targetCert:      &certs.Certificate{},
+		checkIntent: func(Intent, *certs.Certificate) error {
+			return rejection
+		},
+	}
+
+	targetResult := make(chan error, 1)
+	go func() {
+		_, err := ReadIntentCommunication(targetPeer)
+		if err == nil {
+			err = WriteIntentConfirmation(targetPeer)
+		}
+		targetResult <- err
+	}()
+
+	checkResult := make(chan error, 1)
+	go func() {
+		checkResult <- principal.doIntentRequestChecks(request)
+	}()
+
+	response, err := ReadConfOrDenial(delegatePeer)
+	targetConn.Close()
+	targetErr := <-targetResult
+	checkErr := <-checkResult
+
+	assert.NilError(t, err)
+	assert.Equal(t, response.MsgType, IntentDenied)
+	assert.Equal(t, response.Data.Denial, rejection.Error())
+	assert.NilError(t, checkErr)
+	assert.Assert(t, targetErr != nil, "rejected intent was forwarded to target")
+}
