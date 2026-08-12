@@ -43,8 +43,9 @@ func StartPrincipalInstance(dc net.Conn, ci CheckIntentCallback, su setUpTargetC
 	}
 
 	if ci == nil {
-		// pi.checkIntent = defaultRejectAll // this is correct
-		pi.checkIntent = insecureAcceptAll
+		// Fail closed: without an approval callback we must not silently
+		// grant delegation requests (Secure Delegation Principle, Req. 5).
+		pi.checkIntent = defaultRejectAll
 	}
 
 	pi.run()
@@ -53,11 +54,6 @@ func StartPrincipalInstance(dc net.Conn, ci CheckIntentCallback, su setUpTargetC
 
 func defaultRejectAll(i Intent, c *certs.Certificate) error {
 	return fmt.Errorf("default checkIntent func rejects all intent requests")
-}
-
-func insecureAcceptAll(i Intent, c *certs.Certificate) error {
-	logrus.Infof("principal: insecurely accepting intent with no checks")
-	return nil
 }
 
 // Run reads intent requests from the DelegateConn until it closes or error
