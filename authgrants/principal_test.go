@@ -125,21 +125,42 @@ func TestPrincipal(t *testing.T) {
 }
 
 func TestPrincipalNilCallback(t *testing.T) {
-	dc, dcD := net.Pipe() // delegate conn
-	tc, tcT := net.Pipe() // target conn
+	principalConn, delegateConn := net.Pipe()
+	t.Cleanup(func() {
+		principalConn.Close()
+		delegateConn.Close()
+	})
+
+	type delegateResult struct {
+		response AgMessage
+		err      error
+	}
+	result := make(chan delegateResult, 1)
+	go func() {
+		defer delegateConn.Close()
+		request := getTestCmdIntentRequest(t, "echo hello world")
+		_, err := request.WriteTo(delegateConn)
+		if err != nil {
+			result <- delegateResult{err: err}
+			return
+		}
+		response, err := ReadConfOrDenial(delegateConn)
+		result <- delegateResult{response: response, err: err}
+	}()
 
 	setupTarg := func(u core.URL, vc AdditionalVerifyCallback) (net.Conn, error) {
-		logrus.Infof("target setup: simulating connection to %s", u.String())
-		return tc, nil
+		if err := vc(&certs.Certificate{}); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("nil callback unexpectedly approved intent")
 	}
 
-	// Start "Delegate"
-	go fakeDelegate(t, dcD)
-
-	// Start "Target"
-	go fakeTarget(t, tcT)
-
-	StartPrincipalInstance(dc, nil, setupTarg)
+	err := StartPrincipalInstance(principalConn, nil, setupTarg)
+	assert.NilError(t, err)
+	delegate := <-result
+	assert.NilError(t, delegate.err)
+	assert.Equal(t, delegate.response.MsgType, IntentDenied)
+	assert.Equal(t, delegate.response.Data.Denial, "default checkIntent func rejects all intent requests")
 }
 
 func TestPrincipalCheckIntentFail(t *testing.T) {
