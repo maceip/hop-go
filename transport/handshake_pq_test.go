@@ -94,6 +94,12 @@ func TestPQNoiseXXHandshake(t *testing.T) {
 	serverHs.dh.ephemeral.Generate()
 
 	n, err1 = server.writePQServerAuth(serverBuf, serverHs)
+	tamperedServerBuf := append([]byte(nil), serverBuf[:n]...)
+	tamperedServerBuf[n-1] ^= 0xff
+	tamperedClientHS := *client.hs
+	_, err2 = tamperedClientHS.readPQServerAuth(tamperedServerBuf)
+	assert.Check(t, cmp.Equal(ErrInvalidMessage, err2))
+
 	_, err2 = client.hs.readPQServerAuth(serverBuf[:n])
 	assert.NilError(t, err1)
 	assert.NilError(t, err2)

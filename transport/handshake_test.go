@@ -162,6 +162,37 @@ func TestBufferSizes(t *testing.T) {
 	assert.Check(t, cmp.Equal(0, n))
 }
 
+func TestServerAuthRejectsInvalidFinalMAC(t *testing.T) {
+	client, server, _, _, _, _ := newPQClientAndServerForBench(t)
+	t.Cleanup(func() {
+		client.underlyingConn.Close()
+		server.udpConn.Close()
+	})
+
+	client.hs = new(HandshakeState)
+	client.hs.duplex.InitializeEmpty()
+	client.hs.duplex.Absorb([]byte(ProtocolName))
+	client.hs.RekeyFromSqueeze(ProtocolName)
+	client.hs.dh = new(dhState)
+	client.hs.dh.ephemeral.Generate()
+	client.hs.certVerify = &client.config.Verify
+
+	serverHS := new(HandshakeState)
+	serverHS.duplex.InitializeEmpty()
+	serverHS.duplex.Absorb([]byte(ProtocolName))
+	serverHS.RekeyFromSqueeze(ProtocolName)
+	serverHS.dh = new(dhState)
+	copy(serverHS.dh.remoteEphemeral[:], client.hs.dh.ephemeral.Public[:])
+
+	serverBuf := make([]byte, 65535)
+	n, err := server.writeServerAuth(serverBuf, serverHS)
+	assert.NilError(t, err)
+	serverBuf[n-1] ^= 0xff
+
+	_, err = client.hs.readServerAuth(serverBuf[:n])
+	assert.Check(t, cmp.Equal(ErrInvalidMessage, err))
+}
+
 func TestCookie(t *testing.T) {
 	var cookieKey [KeyLen]byte
 	sharedSecret := make([]byte, PQSharedSecretLen)
