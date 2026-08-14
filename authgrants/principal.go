@@ -112,7 +112,9 @@ func (p *principalInstance) doIntentRequestChecks(i Intent) error {
 		p.targetConnected = true
 		logrus.Info("principal: connected to target")
 	} else {
-		p.checkIntent(i, p.targetCert)
+		if err := p.checkIntent(i, p.targetCert); err != nil {
+			return WriteIntentDenied(p.delegateConn, err.Error())
+		}
 	}
 
 	err := WriteIntentCommunication(p.targetConn, i)
